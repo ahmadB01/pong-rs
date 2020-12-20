@@ -11,11 +11,15 @@ const W_HEIGHT: f32 = 600.0;
 const BOARD_WIDTH: f32 = 5.0;
 const BOARD_HEIGHT: f32 = 50.0;
 
-const BALL_RADIUS: f32 = 15.0;
+const G_VEL: f32 = 10.0;
+
+const BALL_RADIUS: f32 = 5.0;
 const BG_COLOR: [f32; 4] = [0.1; 4];
 
-const P_1_OFFSET: f32 = BOARD_WIDTH;
-const P_2_OFFSET: f32 = W_WIDTH - 2.0 * BOARD_WIDTH;
+const P_1_OFFSET: f32 = BALL_RADIUS * 2.0;
+const P_2_OFFSET: f32 = W_WIDTH - BOARD_WIDTH - P_1_OFFSET;
+
+const BALL_VEL: f32 = G_VEL * 0.25;
 
 #[derive(Clone)]
 struct Board {
@@ -26,14 +30,27 @@ struct Board {
 impl Board {
     fn new(offset: f32) -> Self {
         Self {
-            pos: na::Point1::new(W_HEIGHT * 0.5 - BOARD_HEIGHT),
+            pos: na::Point1::new(W_HEIGHT * 0.5 - BOARD_HEIGHT * 0.5),
             offset,
         }
     }
 
-    fn go_up(&mut self) {}
-
-    fn go_down(&mut self) {}
+    #[allow(illegal_floating_point_literal_pattern)]
+    fn handle(&mut self, keycode: KeyCode) {
+        match keycode {
+            KeyCode::Up | KeyCode::W | KeyCode::Z => {
+                if self.pos.x > 0.0 {
+                    self.pos.x -= G_VEL;
+                }
+            }
+            KeyCode::Down | KeyCode::S => {
+                if self.pos.x < W_HEIGHT - BOARD_HEIGHT {
+                    self.pos.x += G_VEL;
+                }
+            }
+            _ => (),
+        }
+    }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         let b = graphics::Mesh::new_rectangle(
@@ -58,21 +75,65 @@ impl From<Board> for graphics::Rect {
     }
 }
 
+#[derive(Clone)]
+enum Crossed {
+    Wall(na::Vector2<f32>),
+    Side,
+}
+
+#[derive(Clone)]
 struct Ball {
     pos: na::Point2<f32>,
+    dir: na::Vector2<f32>,
+    crossed: Option<Crossed>,
+}
+
+// TODO: fix
+fn change_dir(v: na::Vector2<f32>, pos: na::Point2<f32>) -> na::Vector2<f32> {
+    if (v.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS)
+        || (v.x == -BALL_VEL && pos.x == BALL_RADIUS)
+    {
+        [-v.x, v.y].into()
+    } else if (v.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS)
+        || (v.y == -BALL_VEL && pos.y == BALL_RADIUS)
+    {
+        [v.x, -v.y].into()
+    } else {
+        v
+    }
 }
 
 impl Ball {
     fn new() -> Self {
+        let middle = [W_WIDTH * 0.5 - BALL_RADIUS, W_HEIGHT * 0.5 - BALL_RADIUS];
         Self {
-            pos: na::Point2::new(W_WIDTH * 0.5 - BALL_RADIUS, W_HEIGHT * 0.5 - BALL_RADIUS),
+            pos: middle.into(),
+            dir: [BALL_VEL, BALL_VEL].into(),
+            crossed: None,
         }
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        println!("{:?}", self.dir);
+        self.dir = change_dir(self.dir, self.pos);
+        self.pos += self.dir;
+    }
 
-    fn crossed(&self) -> bool {
-        false
+    fn crossed(&self) -> &Option<Crossed> {
+        &self.crossed
+    }
+
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        let c = graphics::Mesh::new_circle(
+            ctx,
+            graphics::DrawMode::fill(),
+            self.pos,
+            BALL_RADIUS,
+            1.0,
+            graphics::WHITE,
+        )?;
+
+        graphics::draw(ctx, &c, graphics::DrawParam::default())
     }
 }
 
@@ -98,7 +159,7 @@ impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         if !self.game_over {
             self.ball.update();
-            self.game_over = self.ball.crossed();
+            self.game_over = matches!(self.ball.crossed(), Some(Crossed::Side));
         }
         Ok(())
     }
@@ -109,22 +170,22 @@ impl EventHandler for MainState {
         self.p_1.draw(ctx)?;
         self.p_2.draw(ctx)?;
 
+        self.ball.draw(ctx)?;
+
         graphics::present(ctx)
     }
 
     fn key_down_event(
         &mut self,
-        ctx: &mut Context,
+        _ctx: &mut Context,
         keycode: KeyCode,
         _keymods: KeyMods,
         _repeat: bool,
     ) {
-        match keycode {
-            KeyCode::W | KeyCode::Z => self.p_1.go_up(),
-            KeyCode::S => self.p_1.go_down(),
-            KeyCode::Up => self.p_2.go_up(),
-            KeyCode::Down => self.p_2.go_down(),
-            _ => (),
+        if let KeyCode::W | KeyCode::Z | KeyCode::S = keycode {
+            self.p_1.handle(keycode);
+        } else if let KeyCode::Up | KeyCode::Down = keycode {
+            self.p_2.handle(keycode);
         }
     }
 }
