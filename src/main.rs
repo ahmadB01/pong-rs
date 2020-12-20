@@ -79,27 +79,28 @@ impl From<Board> for graphics::Rect {
 enum Crossed {
     Wall(na::Vector2<f32>),
     Side,
+    Nothing,
 }
 
 #[derive(Clone)]
 struct Ball {
     pos: na::Point2<f32>,
     dir: na::Vector2<f32>,
-    crossed: Option<Crossed>,
+    crossed: Crossed,
 }
 
-// TODO: fix
-fn change_dir(v: na::Vector2<f32>, pos: na::Point2<f32>) -> na::Vector2<f32> {
-    if (v.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS)
-        || (v.x == -BALL_VEL && pos.x == BALL_RADIUS)
+fn cross(pos: na::Point2<f32>, dir: na::Vector2<f32>) -> Crossed {
+    if (dir.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS)
+        || (dir.x == -BALL_VEL && pos.x == BALL_RADIUS)
     {
-        [-v.x, v.y].into()
-    } else if (v.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS)
-        || (v.y == -BALL_VEL && pos.y == BALL_RADIUS)
+        Crossed::Side
+    } else if (dir.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS)
+        || (dir.y == -BALL_VEL && pos.y == BALL_RADIUS)
     {
-        [v.x, -v.y].into()
+        let new = [dir.x, -dir.y].into();
+        Crossed::Wall(new)
     } else {
-        v
+        Crossed::Nothing
     }
 }
 
@@ -109,17 +110,20 @@ impl Ball {
         Self {
             pos: middle.into(),
             dir: [BALL_VEL, BALL_VEL].into(),
-            crossed: None,
+            crossed: Crossed::Nothing,
         }
     }
 
     fn update(&mut self) {
-        println!("{:?}", self.dir);
-        self.dir = change_dir(self.dir, self.pos);
+        self.crossed = cross(self.pos, self.dir);
+        if let Crossed::Wall(next_dir) = self.crossed {
+            self.dir = next_dir;
+        }
+
         self.pos += self.dir;
     }
 
-    fn crossed(&self) -> &Option<Crossed> {
+    fn crossed(&self) -> &Crossed {
         &self.crossed
     }
 
@@ -159,7 +163,7 @@ impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         if !self.game_over {
             self.ball.update();
-            self.game_over = matches!(self.ball.crossed(), Some(Crossed::Side));
+            self.game_over = matches!(self.ball.crossed(), Crossed::Side);
         }
         Ok(())
     }
