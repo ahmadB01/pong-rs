@@ -16,22 +16,39 @@ const G_VEL: f32 = 10.0;
 const BALL_RADIUS: f32 = 5.0;
 const BG_COLOR: [f32; 4] = [0.1; 4];
 
-const P_1_OFFSET: f32 = BALL_RADIUS * 2.0;
-const P_2_OFFSET: f32 = W_WIDTH - BOARD_WIDTH - P_1_OFFSET;
+const LEFT_OFFSET: f32 = BALL_RADIUS * 2.0;
+const RIGHT_OFFSET: f32 = W_WIDTH - BOARD_WIDTH - LEFT_OFFSET;
 
 const BALL_VEL: f32 = G_VEL * 0.25;
 
 #[derive(Clone)]
+enum Player {
+    Left,
+    Right,
+}
+
+impl std::ops::Not for Player {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Player::Left => Player::Right,
+            Player::Right => Player::Left,
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Board {
     pos: na::Point1<f32>,
-    offset: f32,
+    player: Player,
 }
 
 impl Board {
-    fn new(offset: f32) -> Self {
+    fn new(player: Player) -> Self {
         Self {
             pos: na::Point1::new(W_HEIGHT * 0.5 - BOARD_HEIGHT * 0.5),
-            offset,
+            player,
         }
     }
 
@@ -66,8 +83,12 @@ impl Board {
 
 impl From<Board> for graphics::Rect {
     fn from(p: Board) -> Self {
+        let offset = match p.player {
+            Player::Left => LEFT_OFFSET,
+            Player::Right => RIGHT_OFFSET,
+        };
         Self {
-            x: p.offset,
+            x: offset,
             y: p.pos.x,
             w: BOARD_WIDTH,
             h: BOARD_HEIGHT,
@@ -78,7 +99,7 @@ impl From<Board> for graphics::Rect {
 #[derive(Clone)]
 enum Crossed {
     Wall(na::Vector2<f32>),
-    Side,
+    Side(Player),
     Nothing,
 }
 
@@ -90,15 +111,14 @@ struct Ball {
 }
 
 fn cross(pos: na::Point2<f32>, dir: na::Vector2<f32>) -> Crossed {
-    if (dir.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS)
-        || (dir.x == -BALL_VEL && pos.x == BALL_RADIUS)
-    {
-        Crossed::Side
+    if (dir.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS) {
+        Crossed::Side(Player::Left)
+    } else if (dir.x == -BALL_VEL && pos.x == BALL_RADIUS) {
+        Crossed::Side(Player::Right)
     } else if (dir.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS)
         || (dir.y == -BALL_VEL && pos.y == BALL_RADIUS)
     {
-        let new = [dir.x, -dir.y].into();
-        Crossed::Wall(new)
+        Crossed::Wall([dir.x, -dir.y].into())
     } else {
         Crossed::Nothing
     }
@@ -151,8 +171,8 @@ struct MainState {
 impl MainState {
     fn new() -> Self {
         Self {
-            p_1: Board::new(P_1_OFFSET),
-            p_2: Board::new(P_2_OFFSET),
+            p_1: Board::new(Player::Left),
+            p_2: Board::new(Player::Right),
             ball: Ball::new(),
             game_over: false,
         }
@@ -163,7 +183,16 @@ impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         if !self.game_over {
             self.ball.update();
-            self.game_over = matches!(self.ball.crossed(), Crossed::Side);
+            if let Crossed::Side(player) = self.ball.crossed() {
+                println!(
+                    "{} player won",
+                    match player {
+                        Player::Left => "left",
+                        Player::Right => "right",
+                    }
+                );
+                self.game_over = true;
+            }
         }
         Ok(())
     }
