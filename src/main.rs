@@ -19,7 +19,12 @@ const BG_COLOR: [f32; 4] = [0.1; 4];
 const LEFT_OFFSET: f32 = BALL_RADIUS * 2.0;
 const RIGHT_OFFSET: f32 = W_WIDTH - BOARD_WIDTH - LEFT_OFFSET;
 
-const BALL_VEL: f32 = G_VEL * 0.25;
+const COORD_BALL_VEL: f32 = G_VEL * 0.25;
+const BALL_VEL: [f32; 2] = [COORD_BALL_VEL, COORD_BALL_VEL];
+
+type Pos1 = na::Point1<f32>;
+type Pos2 = na::Point2<f32>;
+type Vec2 = na::Vector2<f32>;
 
 #[derive(Clone)]
 enum Player {
@@ -40,7 +45,7 @@ impl std::ops::Not for Player {
 
 #[derive(Clone)]
 struct Board {
-    pos: na::Point1<f32>,
+    pos: Pos1,
     player: Player,
 }
 
@@ -98,42 +103,42 @@ impl From<Board> for graphics::Rect {
 
 #[derive(Clone)]
 enum Crossed {
-    Bounce(na::Vector2<f32>),
+    Bounce(Vec2),
     Side(Player),
     Nothing,
 }
 
 #[derive(Clone)]
 struct Ball {
-    pos: na::Point2<f32>,
-    dir: na::Vector2<f32>,
+    pos: Pos2,
+    dir: Vec2,
     crossed: Crossed,
 }
 
-// TODO: refactor this
-fn cross(
-    pos: na::Point2<f32>,
-    dir: na::Vector2<f32>,
-    left_pos: na::Point1<f32>,
-    right_pos: na::Point1<f32>,
-) -> Crossed {
-    if dir.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS {
-        Crossed::Side(Player::Left)
-    } else if dir.x == -BALL_VEL && pos.x == BALL_RADIUS {
-        Crossed::Side(Player::Right)
-    } else if dir.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS
-        || dir.y == -BALL_VEL && pos.y == BALL_RADIUS
-    {
-        Crossed::Bounce([dir.x, -dir.y].into())
-    } else if dir.x == BALL_VEL
+fn cross(pos: Pos2, dir: Vec2, left_pos: Pos1, right_pos: Pos1) -> Crossed {
+    let left_side = dir.x == -BALL_VEL[0] && pos.x == BALL_RADIUS;
+    let right_side = dir.x == BALL_VEL[0] && pos.x == W_WIDTH - BALL_RADIUS;
+    let wall = dir.y == BALL_VEL[1] && pos.y == W_HEIGHT - BALL_RADIUS
+        || dir.y == -BALL_VEL[1] && pos.y == BALL_RADIUS;
+
+    let left_player = dir.x == -BALL_VEL[0]
+        && pos.x == LEFT_OFFSET + BOARD_WIDTH
+        && pos.y >= left_pos.x
+        && pos.y <= left_pos.x + BOARD_HEIGHT;
+    let right_player = dir.x == BALL_VEL[0]
         && pos.x == RIGHT_OFFSET
         && pos.y >= right_pos.x
-        && pos.y <= right_pos.x + BOARD_HEIGHT
-        || dir.x == -BALL_VEL
-            && pos.x == LEFT_OFFSET + BOARD_WIDTH
-            && pos.y >= left_pos.x
-            && pos.y <= left_pos.x + BOARD_HEIGHT
-    {
+        && pos.y <= right_pos.x + BOARD_HEIGHT;
+
+    let player = left_player || right_player;
+
+    if left_side {
+        Crossed::Side(Player::Left)
+    } else if right_side {
+        Crossed::Side(Player::Right)
+    } else if wall {
+        Crossed::Bounce([dir.x, -dir.y].into())
+    } else if player {
         Crossed::Bounce([-dir.x, dir.y].into())
     } else {
         Crossed::Nothing
@@ -145,12 +150,12 @@ impl Ball {
         let middle = [W_WIDTH * 0.5 - BALL_RADIUS, W_HEIGHT * 0.5 - BALL_RADIUS];
         Self {
             pos: middle.into(),
-            dir: [BALL_VEL, BALL_VEL].into(),
+            dir: BALL_VEL.into(),
             crossed: Crossed::Nothing,
         }
     }
 
-    fn update(&mut self, left_pos: na::Point1<f32>, right_pos: na::Point1<f32>) {
+    fn update(&mut self, left_pos: Pos1, right_pos: Pos1) {
         self.crossed = cross(self.pos, self.dir, left_pos, right_pos);
         if let Crossed::Bounce(next_dir) = self.crossed {
             self.dir = next_dir;
@@ -202,7 +207,7 @@ impl EventHandler for MainState {
             if let Crossed::Side(player) = self.ball.crossed() {
                 println!(
                     "{} player won",
-                    match player {
+                    match !player.clone() {
                         Player::Left => "left",
                         Player::Right => "right",
                     }
