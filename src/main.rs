@@ -98,7 +98,7 @@ impl From<Board> for graphics::Rect {
 
 #[derive(Clone)]
 enum Crossed {
-    Wall(na::Vector2<f32>),
+    Bounce(na::Vector2<f32>),
     Side(Player),
     Nothing,
 }
@@ -110,15 +110,31 @@ struct Ball {
     crossed: Crossed,
 }
 
-fn cross(pos: na::Point2<f32>, dir: na::Vector2<f32>) -> Crossed {
-    if (dir.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS) {
+// TODO: refactor this
+fn cross(
+    pos: na::Point2<f32>,
+    dir: na::Vector2<f32>,
+    left_pos: na::Point1<f32>,
+    right_pos: na::Point1<f32>,
+) -> Crossed {
+    if dir.x == BALL_VEL && pos.x == W_WIDTH - BALL_RADIUS {
         Crossed::Side(Player::Left)
-    } else if (dir.x == -BALL_VEL && pos.x == BALL_RADIUS) {
+    } else if dir.x == -BALL_VEL && pos.x == BALL_RADIUS {
         Crossed::Side(Player::Right)
-    } else if (dir.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS)
-        || (dir.y == -BALL_VEL && pos.y == BALL_RADIUS)
+    } else if dir.y == BALL_VEL && pos.y == W_HEIGHT - BALL_RADIUS
+        || dir.y == -BALL_VEL && pos.y == BALL_RADIUS
     {
-        Crossed::Wall([dir.x, -dir.y].into())
+        Crossed::Bounce([dir.x, -dir.y].into())
+    } else if dir.x == BALL_VEL
+        && pos.x == RIGHT_OFFSET
+        && pos.y >= right_pos.x
+        && pos.y <= right_pos.x + BOARD_HEIGHT
+        || dir.x == -BALL_VEL
+            && pos.x == LEFT_OFFSET + BOARD_WIDTH
+            && pos.y >= left_pos.x
+            && pos.y <= left_pos.x + BOARD_HEIGHT
+    {
+        Crossed::Bounce([-dir.x, dir.y].into())
     } else {
         Crossed::Nothing
     }
@@ -134,9 +150,9 @@ impl Ball {
         }
     }
 
-    fn update(&mut self) {
-        self.crossed = cross(self.pos, self.dir);
-        if let Crossed::Wall(next_dir) = self.crossed {
+    fn update(&mut self, left_pos: na::Point1<f32>, right_pos: na::Point1<f32>) {
+        self.crossed = cross(self.pos, self.dir, left_pos, right_pos);
+        if let Crossed::Bounce(next_dir) = self.crossed {
             self.dir = next_dir;
         }
 
@@ -153,7 +169,7 @@ impl Ball {
             graphics::DrawMode::fill(),
             self.pos,
             BALL_RADIUS,
-            1.0,
+            0.1,
             graphics::WHITE,
         )?;
 
@@ -162,8 +178,8 @@ impl Ball {
 }
 
 struct MainState {
-    p_1: Board,
-    p_2: Board,
+    left: Board,
+    right: Board,
     ball: Ball,
     game_over: bool,
 }
@@ -171,8 +187,8 @@ struct MainState {
 impl MainState {
     fn new() -> Self {
         Self {
-            p_1: Board::new(Player::Left),
-            p_2: Board::new(Player::Right),
+            left: Board::new(Player::Left),
+            right: Board::new(Player::Right),
             ball: Ball::new(),
             game_over: false,
         }
@@ -182,7 +198,7 @@ impl MainState {
 impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         if !self.game_over {
-            self.ball.update();
+            self.ball.update(self.left.pos, self.right.pos);
             if let Crossed::Side(player) = self.ball.crossed() {
                 println!(
                     "{} player won",
@@ -200,8 +216,8 @@ impl EventHandler for MainState {
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         graphics::clear(ctx, BG_COLOR.into());
 
-        self.p_1.draw(ctx)?;
-        self.p_2.draw(ctx)?;
+        self.left.draw(ctx)?;
+        self.right.draw(ctx)?;
 
         self.ball.draw(ctx)?;
 
@@ -216,9 +232,9 @@ impl EventHandler for MainState {
         _repeat: bool,
     ) {
         if let KeyCode::W | KeyCode::Z | KeyCode::S = keycode {
-            self.p_1.handle(keycode);
+            self.left.handle(keycode);
         } else if let KeyCode::Up | KeyCode::Down = keycode {
-            self.p_2.handle(keycode);
+            self.right.handle(keycode);
         }
     }
 }
