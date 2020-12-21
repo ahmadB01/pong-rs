@@ -32,32 +32,22 @@ enum Player {
     Right,
 }
 
-impl std::ops::Not for Player {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
-        match self {
-            Player::Left => Player::Right,
-            Player::Right => Player::Left,
-        }
-    }
-}
-
 #[derive(Clone)]
 struct Board {
     pos: Pos1,
     player: Player,
+    score: usize,
 }
 
 impl Board {
     fn new(player: Player) -> Self {
         Self {
-            pos: na::Point1::new(W_HEIGHT * 0.5 - BOARD_HEIGHT * 0.5),
+            pos: Pos1::new(W_HEIGHT * 0.5 - BOARD_HEIGHT * 0.5),
             player,
+            score: 0,
         }
     }
 
-    #[allow(illegal_floating_point_literal_pattern)]
     fn handle(&mut self, keycode: KeyCode) {
         match keycode {
             KeyCode::Up | KeyCode::W | KeyCode::Z => {
@@ -75,6 +65,17 @@ impl Board {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        let num = graphics::Text::new(format!("{}", self.score));
+
+        let score_pos = Pos2::new(
+            match self.player {
+                Player::Left => W_WIDTH * 0.5 - LEFT_OFFSET - num.height(ctx) as f32 * 0.5,
+                Player::Right => W_WIDTH * 0.5 + LEFT_OFFSET,
+            },
+            0.0,
+        );
+        graphics::draw(ctx, &num, graphics::DrawParam::default().dest(score_pos))?;
+
         let b = graphics::Mesh::new_rectangle(
             ctx,
             graphics::DrawMode::fill(),
@@ -83,6 +84,14 @@ impl Board {
         )?;
 
         graphics::draw(ctx, &b, graphics::DrawParam::default())
+    }
+
+    fn win(&mut self) {
+        self.score += 1;
+    }
+
+    fn reset_pos(&mut self) {
+        self.pos = Pos1::new(W_HEIGHT * 0.5 - BOARD_HEIGHT * 0.5);
     }
 }
 
@@ -133,9 +142,9 @@ fn cross(pos: Pos2, dir: Vec2, left_pos: Pos1, right_pos: Pos1) -> Crossed {
     let player = left_player || right_player;
 
     if left_side {
-        Crossed::Side(Player::Left)
-    } else if right_side {
         Crossed::Side(Player::Right)
+    } else if right_side {
+        Crossed::Side(Player::Left)
     } else if wall {
         Crossed::Bounce([dir.x, -dir.y].into())
     } else if player {
@@ -180,6 +189,11 @@ impl Ball {
 
         graphics::draw(ctx, &c, graphics::DrawParam::default())
     }
+
+    fn reset(&mut self) {
+        let middle = [W_WIDTH * 0.5 - BALL_RADIUS, W_HEIGHT * 0.5 - BALL_RADIUS];
+        self.pos = middle.into();
+    }
 }
 
 struct MainState {
@@ -198,22 +212,28 @@ impl MainState {
             game_over: false,
         }
     }
+
+    fn reset(&mut self) {
+        self.left.reset_pos();
+        self.right.reset_pos();
+        self.ball.reset();
+        self.game_over = false;
+    }
 }
 
 impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         if !self.game_over {
             self.ball.update(self.left.pos, self.right.pos);
-            if let Crossed::Side(player) = self.ball.crossed() {
-                println!(
-                    "{} player won",
-                    match !player.clone() {
-                        Player::Left => "left",
-                        Player::Right => "right",
-                    }
-                );
+            if let Crossed::Side(winner) = self.ball.crossed() {
+                match winner {
+                    Player::Right => self.right.win(),
+                    Player::Left => self.left.win(),
+                }
                 self.game_over = true;
             }
+        } else {
+            self.reset();
         }
         Ok(())
     }
@@ -225,6 +245,18 @@ impl EventHandler for MainState {
         self.right.draw(ctx)?;
 
         self.ball.draw(ctx)?;
+
+        let mid_line = graphics::Mesh::new_line(
+            ctx,
+            &[
+                Pos2::new(W_WIDTH * 0.5, 0.0),
+                Pos2::new(W_WIDTH * 0.5, W_HEIGHT),
+            ],
+            2.0,
+            [0.4; 4].into(),
+        )?;
+
+        graphics::draw(ctx, &mid_line, graphics::DrawParam::default())?;
 
         graphics::present(ctx)
     }
